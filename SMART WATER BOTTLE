@@ -1,0 +1,149 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include "RTClib.h"
+#include "HX711.h"
+
+LiquidCrystal_I2C lcd(0x27,16,2);
+RTC_DS1307 rtc;
+HX711 scale;
+
+#define DOUT 4
+#define CLK 5
+
+#define BUZZER 18
+#define RED_LED 19
+#define GREEN_LED 23
+
+float previousWeight = 0;
+float currentWeight = 0;
+
+unsigned long lastReminder = 0;
+const unsigned long reminderInterval = 1800000; // 30 minutes
+
+void setup()
+{
+Serial.begin(115200);
+
+pinMode(BUZZER,OUTPUT);
+pinMode(RED_LED,OUTPUT);
+pinMode(GREEN_LED,OUTPUT);
+
+digitalWrite(BUZZER,LOW);
+digitalWrite(RED_LED,LOW);
+digitalWrite(GREEN_LED,LOW);
+
+lcd.init();
+lcd.backlight();
+
+Wire.begin();
+rtc.begin();
+
+scale.begin(DOUT,CLK);
+
+/* Calibration factor (adjust if needed) */
+scale.set_scale(-7050);  
+scale.tare();
+
+lcd.setCursor(0,0);
+lcd.print("SMART BOTTLE");
+lcd.setCursor(0,1);
+lcd.print("System Start");
+delay(2000);
+
+lcd.clear();
+}
+
+void loop()
+{
+DateTime now = rtc.now();
+  Serial.println(now.timestamp());   // add this line here
+
+int hour = now.hour();
+int minute = now.minute();
+
+/* Read weight */
+currentWeight = scale.get_units(10);
+
+if(currentWeight < 0)
+currentWeight = 0;
+
+Serial.print("Water Level: ");
+Serial.print(currentWeight);
+Serial.println(" ml");
+
+/* LCD Display */
+lcd.setCursor(0,0);
+lcd.print("Water:");
+lcd.print((int)currentWeight);
+lcd.print(" ml   ");
+
+/* Working Time 7 AM to 8:30 PM */
+
+if(hour >=7 && (hour <20 || (hour==20 && minute<=30)))
+{
+
+/* Hydration Reminder */
+
+if(millis() - lastReminder >= reminderInterval)
+{
+
+if((previousWeight - currentWeight) < 150)
+{
+lcd.setCursor(0,1);
+lcd.print("Drink 150ml     ");
+
+digitalWrite(BUZZER,HIGH);
+delay(2000);
+digitalWrite(BUZZER,LOW);
+}
+
+previousWeight = currentWeight;
+lastReminder = millis();
+}
+
+/* Bottle Status */
+
+if(currentWeight > 200 )
+{
+digitalWrite(GREEN_LED,HIGH);
+digitalWrite(RED_LED,LOW);
+
+lcd.setCursor(0,1);
+lcd.print("Hydration Ok    ");
+}
+
+else if(currentWeight < 200 && currentWeight > 20)
+{
+digitalWrite(RED_LED,LOW);
+digitalWrite(GREEN_LED,LOW);
+
+lcd.setCursor(0,1);
+lcd.print("Refill soon    ");
+}
+
+else if(currentWeight <=20 )
+{
+digitalWrite(RED_LED,HIGH);
+digitalWrite(GREEN_LED,LOW);
+
+lcd.setCursor(0,1);
+lcd.print("Bottle Empty    ");
+
+digitalWrite(BUZZER, HIGH);
+digitalWrite(BUZZER, LOW);
+delay(1000);
+}
+
+}
+else
+{
+lcd.setCursor(0,1);
+lcd.print("System Sleep    ");
+
+digitalWrite(BUZZER,LOW);
+digitalWrite(RED_LED,LOW);
+digitalWrite(GREEN_LED,LOW);
+}
+
+delay(2000);
+}
